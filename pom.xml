@@ -5,9 +5,12 @@
     <artifactId>pi-oled</artifactId>
     <version>1.3-SNAPSHOT</version>
     <packaging>jar</packaging>
+    
     <properties>
+        <java.version>11</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <netbeans.hint.license>bsd3</netbeans.hint.license>
+        <pi4j.version>2.1.1</pi4j.version>
     </properties>
 
     <name>Pi OLED Display</name>
@@ -51,11 +54,19 @@
     </developers>
 
     <dependencies>
-        <dependency>
-            <groupId>com.pi4j</groupId>
-            <artifactId>pi4j-core</artifactId>
-            <version>1.2</version>
-        </dependency>
+
+		<dependency>
+    		<groupId>com.pi4j</groupId>
+    		<artifactId>pi4j-core</artifactId>
+    		<version>${pi4j.version}</version>
+		</dependency>
+		
+		<dependency>
+    		<groupId>com.pi4j</groupId>
+    		<artifactId>pi4j-plugin-linuxfs</artifactId>
+    		<version>${pi4j.version}</version>
+		</dependency>
+		
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
@@ -71,8 +82,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>2.3.2</version>
                 <configuration>
-                    <target>1.5</target>
-                    <source>1.5</source>
+                    <target>11</target>
+                    <source>11</source>
                     <compilerArgument>-Xlint:all</compilerArgument>
                     <showWarnings>true</showWarnings>
                     <showDeprecation>true</showDeprecation>

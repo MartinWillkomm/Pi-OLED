@@ -28,16 +28,19 @@
  */
 package de.pi3g.pi.oled;
 
-import com.pi4j.io.i2c.I2CBus;
-import com.pi4j.io.i2c.I2CDevice;
-import com.pi4j.io.i2c.I2CFactory;
-import com.pi4j.io.i2c.I2CFactory.UnsupportedBusNumberException;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.pi4j.Pi4J;
+import com.pi4j.context.Context;
+import com.pi4j.io.i2c.I2C;
+import com.pi4j.io.i2c.I2CConfig;
+import com.pi4j.io.i2c.I2CProvider;
 
 /**
  * A raspberry pi driver for the 128x64 pixel OLED display (i2c bus).
@@ -73,6 +76,7 @@ import java.util.logging.Logger;
  */
 public class OLEDDisplay {
 
+
     /**
      * Used to specify the orientation of a display.
      * This allows mounting the oled display upright or flipping it.
@@ -88,13 +92,14 @@ public class OLEDDisplay {
     }
 
 
-    private static final Logger LOGGER = Logger.getLogger(OLEDDisplay.class.getCanonicalName());
+    private static final Logger logger = LoggerFactory.getLogger(OLEDDisplay.class);
 
-    private static final int DEFAULT_I2C_BUS = I2CBus.BUS_1;
+    private static final int DEFAULT_I2C_BUS = 1;
     private static final int DEFAULT_DISPLAY_ADDRESS = 0x3C;
 
-    private static final int DISPLAY_WIDTH = 128;
-    private static final int DISPLAY_HEIGHT = 64;
+    public static final int DISPLAY_WIDTH = 128;
+//    public static final int DISPLAY_WIDTH_SH1106 = 132;
+    public static final int DISPLAY_HEIGHT = 64;
     private static final int MAX_INDEX = (DISPLAY_HEIGHT / 8) * DISPLAY_WIDTH;
 
     private static final byte SSD1306_SETCONTRAST = (byte) 0x81;
@@ -134,11 +139,16 @@ public class OLEDDisplay {
     private static final byte SSD1306_EXTERNALVCC = (byte) 0x1;
     private static final byte SSD1306_SWITCHCAPVCC = (byte) 0x2;
 
-    private final I2CBus bus;
-    private final I2CDevice device;
+    private final I2C device;
     private final Rotation rotation;
 
+    private Context pi4j; 
+	private I2CProvider i2CProvider;
+	private I2CConfig i2cConfig;
+	
     private final byte[] imageBuffer = new byte[(DISPLAY_WIDTH * DISPLAY_HEIGHT) / 8];
+
+	private boolean usePageAdressMode;
 
     /**
      * creates an OLED display object with default
@@ -148,8 +158,8 @@ public class OLEDDisplay {
      * @throws IOException
      * @throws com.pi4j.io.i2c.I2CFactory.UnsupportedBusNumberException
      */
-    public OLEDDisplay() throws IOException, UnsupportedBusNumberException {
-        this(DEFAULT_I2C_BUS, DEFAULT_DISPLAY_ADDRESS, Rotation.DEG_0);
+    public OLEDDisplay() throws IOException {
+        this(DEFAULT_I2C_BUS, DEFAULT_DISPLAY_ADDRESS, Rotation.DEG_0, false);
     }
 
     /**
@@ -160,8 +170,8 @@ public class OLEDDisplay {
      * @throws IOException
      * @throws com.pi4j.io.i2c.I2CFactory.UnsupportedBusNumberException
      */
-    public OLEDDisplay(int displayAddress) throws IOException, UnsupportedBusNumberException {
-        this(DEFAULT_I2C_BUS, displayAddress, Rotation.DEG_0);
+    public OLEDDisplay(int displayAddress, boolean usePageAdressMode) throws IOException {
+        this(DEFAULT_I2C_BUS, displayAddress, Rotation.DEG_0, usePageAdressMode);
     }
 
     /**
@@ -173,8 +183,8 @@ public class OLEDDisplay {
      * @throws IOException
      * @throws com.pi4j.io.i2c.I2CFactory.UnsupportedBusNumberException
      */
-    public OLEDDisplay(int busNumber, int displayAddress) throws IOException, UnsupportedBusNumberException {
-        this(busNumber, displayAddress, Rotation.DEG_0);
+    public OLEDDisplay(int busNumber, int displayAddress, boolean usePageAdressMode) throws IOException {
+        this(busNumber, displayAddress, Rotation.DEG_0, usePageAdressMode);
     }
 
     /**
@@ -186,8 +196,8 @@ public class OLEDDisplay {
      * @throws IOException
      * @throws com.pi4j.io.i2c.I2CFactory.UnsupportedBusNumberException
      */
-    public OLEDDisplay(Rotation rotation) throws IOException, UnsupportedBusNumberException {
-        this(DEFAULT_I2C_BUS, DEFAULT_DISPLAY_ADDRESS, rotation);
+    public OLEDDisplay(Rotation rotation, boolean usePageAdressMode) throws IOException {
+        this(DEFAULT_I2C_BUS, DEFAULT_DISPLAY_ADDRESS, rotation, usePageAdressMode);
     }
 
     /**
@@ -199,8 +209,8 @@ public class OLEDDisplay {
      * @throws IOException
      * @throws com.pi4j.io.i2c.I2CFactory.UnsupportedBusNumberException
      */
-    public OLEDDisplay(int displayAddress, Rotation rotation) throws IOException, UnsupportedBusNumberException {
-        this(DEFAULT_I2C_BUS, displayAddress, rotation);
+    public OLEDDisplay(int displayAddress, Rotation rotation, boolean usePageAdressMode) throws IOException {
+        this(DEFAULT_I2C_BUS, displayAddress, rotation, usePageAdressMode);
     }
 
     /**
@@ -209,15 +219,20 @@ public class OLEDDisplay {
      * @param busNumber the i2c bus number (use constants from I2CBus)
      * @param displayAddress the i2c bus address of the display
      * @param rotation orientation of the display, can be used if the display is mounted upright or flipped
+     * @param usePageAdressMode use addressing for SH1106-compatible displays, cheap ebay ones.
      * @throws IOException
      * @throws com.pi4j.io.i2c.I2CFactory.UnsupportedBusNumberException
      */
-    public OLEDDisplay(int busNumber, int displayAddress, Rotation rotation) throws IOException, UnsupportedBusNumberException {
-        bus = I2CFactory.getInstance(busNumber);
-        device = bus.getDevice(displayAddress);
+    public OLEDDisplay(int busNumber, int displayAddress, Rotation rotation, boolean usePageAdressMode) throws IOException {
+		pi4j = Pi4J.newAutoContext();
+		i2CProvider = pi4j.provider("linuxfs-i2c");
+		i2cConfig = I2C.newConfigBuilder(pi4j).id("TCA9534").bus(busNumber).device(displayAddress).build();
+		device = i2CProvider.create(i2cConfig);
+		
         this.rotation = rotation;
+        this.usePageAdressMode = usePageAdressMode;
 
-        LOGGER.log(Level.FINE, "Opened i2c bus");
+        logger.info("Opened i2c bus");
 
         clear();
 
@@ -265,7 +280,7 @@ public class OLEDDisplay {
     }
 
     private void writeCommand(byte command) throws IOException {
-        device.write(0x00, command);
+        device.writeRegister(0x00, command);
     }
 
     private void init() throws IOException {
@@ -280,7 +295,11 @@ public class OLEDDisplay {
         writeCommand(SSD1306_CHARGEPUMP);                    // 0x8D
         writeCommand((byte) 0x14);
         writeCommand(SSD1306_MEMORYMODE);                    // 0x20
-        writeCommand((byte) 0x00);                           // 0x0 act like ks0108
+        if (usePageAdressMode) {
+        	writeCommand((byte) 0x02); 						 //page adressing mode
+        } else {
+        	writeCommand((byte) 0x00);                       // 0x0 act like ks0108
+        }
         writeCommand((byte) (SSD1306_SEGREMAP | 0x1));
         writeCommand(SSD1306_COMSCANDEC);
         writeCommand(SSD1306_SETCOMPINS);                    // 0xDA
@@ -297,6 +316,7 @@ public class OLEDDisplay {
         writeCommand(SSD1306_DISPLAYON);//--turn on oled panel
     }
 
+    
     @SuppressWarnings("SuspiciousNameCombination")
     public synchronized void setPixel(int x, int y, boolean on) {
         switch (rotation) {
@@ -394,36 +414,66 @@ public class OLEDDisplay {
         }
     }
 
+    // taken from SH1106, see here for example:
+    public synchronized void update() throws IOException {
+    	if (usePageAdressMode) {
+    		// taken from https://github.com/feng1126/SH1106/blob/master/SH1106.py
+    		// and https://arduino.stackexchange.com/questions/13975/porting-sh1106-oled-driver-128-x-64-128-x-32-screen-is-garbled-but-partially
+    		for (int page = 0; page < 8; page++) {
+    			writeCommand((byte) (0xB0 + page));
+    			writeCommand((byte) 0x02);
+    			writeCommand((byte) 0x10);
+    			for (int i = 0; i < DISPLAY_WIDTH; i++) {
+    				device.writeRegister((byte) 0x40, imageBuffer[i+DISPLAY_WIDTH*page]);
+    			}
+    		}
+    	} else {
+            writeCommand(SSD1306_COLUMNADDR);
+            writeCommand((byte) 0);   // Column start address (0 = reset)
+            writeCommand((byte) (DISPLAY_WIDTH - 1)); // Column end address (127 = reset)
+
+            writeCommand(SSD1306_PAGEADDR);
+            writeCommand((byte) 0); // Page start address (0 = reset)
+            writeCommand((byte) 7); // Page end address
+
+            for (int i = 0; i < ((DISPLAY_WIDTH * DISPLAY_HEIGHT / 8) / 16); i++) {
+                // send a bunch of data in one xmission
+            	//TODO: see fork here: https://github.com/jackarian/Pi-OLED-V2/blob/master/src/main/java/it/pi4g/pi/oled/OLEDDisplay.java 
+                device.write(writeBytes(0x40, imageBuffer, i*16, 16));
+            }
+    	}
+    }
+    
     /**
-     * sends the current buffer to the display
+     * This is a convenient method to merge data to sent command to the ssd1306
+     * @param localAddress
+     * @param buffer
+     * @param offset
+     * @param size
+     * @return
      * @throws IOException
      */
-    public synchronized void update() throws IOException {
-        writeCommand(SSD1306_COLUMNADDR);
-        writeCommand((byte) 0);   // Column start address (0 = reset)
-        writeCommand((byte) (DISPLAY_WIDTH - 1)); // Column end address (127 = reset)
-
-        writeCommand(SSD1306_PAGEADDR);
-        writeCommand((byte) 0); // Page start address (0 = reset)
-        writeCommand((byte) 7); // Page end address
-
-        for (int i = 0; i < ((DISPLAY_WIDTH * DISPLAY_HEIGHT / 8) / 16); i++) {
-            // send a bunch of data in one xmission
-            device.write((byte) 0x40, imageBuffer, i * 16, 16);
-        }
+    public byte[] writeBytes(final int localAddress,final byte[] buffer,  final int offset,final int size) throws IOException {
+            byte[] buf = new byte[size + 1];
+            buf[0] = (byte)localAddress;
+            System.arraycopy(buffer, offset, buf, 1, size);
+            return buf;
     }
-
+    
     private synchronized void shutdown() {
         try {
             //before we shut down we clear the display
             clear();
             update();
-
+    		
             //now we close the bus
-            bus.close();
+            device.close();
+            pi4j.shutdown();
+            
         } catch (IOException ex) {
-            LOGGER.log(Level.FINE, "Closing i2c bus");
+            logger.info("Closing i2c bus");
         }
     }
+
 
 }

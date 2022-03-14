@@ -8,6 +8,16 @@ vendors.
 This is basically a rough port of Adafruit's SSD1306 library for Arduino which
 can be found here: https://github.com/adafruit/Adafruit_SSD1306
 
+about SH1106...
+============
+
+This fork has been extended to work with the cheaper SH1106-displays currently sold
+on Ebay and other locations. Use additional constructor parameter 
+
+	usePageAdressMode = true
+
+for these SH1106 displays. See the links at the end for further reference.
+
 how to use?
 ============
 You can then use the library in your Maven projects like this (it's on Maven Central):
