@@ -298,7 +298,7 @@ public class OLEDDisplay {
         if (usePageAdressMode) {
         	writeCommand((byte) 0x02); 						 //page adressing mode
         } else {
-        	writeCommand((byte) 0x00);                       // 0x0 act like ks0108
+        	writeCommand((byte) 0x00);                       //horizontal addressing mode, 0x0 act like ks0108.
         }
         writeCommand((byte) (SSD1306_SEGREMAP | 0x1));
         writeCommand(SSD1306_COMSCANDEC);
@@ -414,7 +414,17 @@ public class OLEDDisplay {
         }
     }
 
-    // taken from SH1106, see here for example:
+    /**
+     * 
+     * taken from SH1106, see here for example: https://github.com/feng1126/SH1106
+     * also read about page adressing mode here:
+     * https://hw101.tbs1.de/ssd1306/doc/ssd1306_datasheet.pdf
+     * 
+     * from what i could find, the SH1106 line of displays only support 
+     * page adressing mode.
+     * 
+     * @throws IOException
+     */
     public synchronized void update() throws IOException {
     	if (usePageAdressMode) {
     		// taken from https://github.com/feng1126/SH1106/blob/master/SH1106.py
